@@ -310,6 +310,7 @@ void PublishDeviceData(JsonObject& BLEdata, bool processBLEData = true);
 
 static TaskHandle_t xCoreTaskHandle;
 static TaskHandle_t xProcBLETaskHandle;
+static TaskHandle_t xProcBTQueueTaskHandle;
 
 atomic_int forceBTScan;
 
@@ -341,11 +342,16 @@ void pubBT(JsonObject& data) {
 }
 
 // should run from the main core
-void emptyBTQueue() {
-  for (bool first = true;;) {
+void emptyBTQueue(void* pvParameters) {
+  bool first = true;
+  for (;;) {
+    vTaskDelay(500);
     int next = atomic_load_explicit(&jsonBTBufferQueueNext, ::memory_order_seq_cst); // use namespace std -> ambiguous error...
     int last = atomic_load_explicit(&jsonBTBufferQueueLast, ::memory_order_seq_cst); // use namespace std -> ambiguous error...
-    if (last == next) break;
+    if (last == next) {
+      first = true;
+      continue;
+    }
     if (first) {
       int diff = (2 * BTQueueSize + last - next) % (2 * BTQueueSize);
       btQueueLengthSum += diff;
@@ -355,7 +361,6 @@ void emptyBTQueue() {
     JsonBundle& bundle = jsonBTBufferQueue[next % BTQueueSize];
     pubBTMainCore(bundle.object, bundle.haPresence);
     atomic_store_explicit(&jsonBTBufferQueueNext, (next + 1) % (2 * BTQueueSize), ::memory_order_seq_cst); // use namespace std -> ambiguous error...
-    vTaskDelay(1);
   }
 }
 
@@ -580,11 +585,11 @@ std::string convertServiceData(std::string deviceServiceData) {
 
 void procBLETask(void* pvParameters) {
   BLEAdvertisedDevice* advertisedDevice = nullptr;
-
   for (;;) {
     xQueueReceive(BLEQueue, &advertisedDevice, portMAX_DELAY);
 
-    if (!ProcessLock) {
+    if (!ProcessLock && !scan) {
+      vTaskDelay(100);
       Log.trace(F("Creating BLE buffer" CR));
       JsonObject& BLEdata = getBTJsonObject();
       String mac_adress = advertisedDevice->getAddress().toString().c_str();
@@ -649,6 +654,7 @@ void BLEscan() {
   }
   disableCore0WDT();
   Log.notice(F("Scan begin" CR));
+  scan = true;
   BLEScan* pBLEScan = BLEDevice::getScan();
   MyAdvertisedDeviceCallbacks myCallbacks;
   pBLEScan->setAdvertisedDeviceCallbacks(&myCallbacks);
@@ -665,6 +671,7 @@ void BLEscan() {
   Log.notice(F("Found %d devices, scan number %d end" CR), foundDevices.getCount(), scanCount);
   enableCore0WDT();
   Log.trace(F("Process BLE stack free: %u" CR), uxTaskGetStackHighWaterMark(xProcBLETaskHandle));
+  scan = false;
 }
 
 /**
@@ -878,9 +885,18 @@ void setupBT() {
       "procBLETask", /* Name of the task */
       5120, /* Stack size in bytes */
       NULL, /* Task input parameter */
-      2, /* Priority of the task (set higher than core task) */
+      1, /* Priority of the task (set higher than core task) */
       &xProcBLETaskHandle, /* Task handle. */
       1); /* Core where the task should run */
+
+  xTaskCreatePinnedToCore(
+      emptyBTQueue, /* Function to implement the task */
+      "emptyBTQueue", /* Name of the task */
+      10000, /* Stack size in bytes */
+      NULL, /* Task input parameter */
+      2, /* Priority of the task (set higher than core task) */
+      &xProcBTQueueTaskHandle, /* Task handle. */
+      0); /* Core where the task should run */
 
   // we setup a task with priority one to avoid conflict with other gateways
   xTaskCreatePinnedToCore(
@@ -888,7 +904,7 @@ void setupBT() {
       "coreTask", /* Name of the task */
       10000, /* Stack size in bytes */
       NULL, /* Task input parameter */
-      1, /* Priority of the task */
+      0, /* Priority of the task */
       &xCoreTaskHandle, /* Task handle. */
       taskCore); /* Core where the task should run */
   Log.trace(F("ZgatewayBT multicore ESP32 setup done " CR));

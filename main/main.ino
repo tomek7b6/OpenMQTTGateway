@@ -1629,7 +1629,7 @@ void loop() {
       if (disc)
         launchBTDiscovery(publishDiscovery);
 #  endif
-      emptyBTQueue();
+      //emptyBTQueue();
 #endif
 #ifdef ZgatewaySRFB
       SRFBtoMQTT();
