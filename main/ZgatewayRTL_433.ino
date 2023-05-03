@@ -129,7 +129,7 @@ void launchRTL_433Discovery(bool overrideDiscovery) {
           DISCOVERY_TRACE_LOG(F("idWoKey %s" CR), idWoKey.c_str());
 #    if OpenHABDiscovery
           String value_template = "{{ value_json." + String(parameters[i][0]) + "}}";
-          if (strcmp(parameters[i][0], "battery_ok") == 0)) {
+          if (strcmp(parameters[i][0], "battery_ok") == 0) {
               value_template = "{{ float(value_json." + String(parameters[i][0]) + ") * 99 + 1 }}"; // https://github.com/merbanan/rtl_433/blob/93f0f30c28cfb6b82b8cc3753415b01a85bee91d/examples/rtl_433_mqtt_hass.py#L187
             }
 #    else
