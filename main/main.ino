@@ -70,6 +70,9 @@ bool ready_to_sleep = false;
 StaticJsonDocument<JSON_MSG_BUFFER> modulesBuffer;
 JsonArray modules = modulesBuffer.to<JsonArray>();
 
+// Global struct to store live SYS configuration data
+SYSConfig_s SYSConfig;
+
 #ifndef ZgatewayGFSunInverter
 // Arduino IDE compiles, it automatically creates all the header declarations for all the functions you have in your *.ino file.
 // Unfortunately it ignores #if directives.
@@ -879,6 +882,9 @@ void setup() {
 #endif
 
 #if defined(ESP8266) || defined(ESP32)
+  SYSConfig_init();
+  SYSConfig_load();
+
   if (mqtt_secure) {
     eClient = new WiFiClientSecure;
     if (mqtt_cert_validate) {
@@ -1285,6 +1291,43 @@ bool shouldSaveConfig = false;
 void saveConfigCallback() {
   Log.trace(F("Should save config" CR));
   shouldSaveConfig = true;
+}
+
+void SYSConfig_init() {
+#  ifdef ZmqttDiscovery
+  SYSConfig.discovery = true;
+#  else
+  SYSConfig.discovery = false;
+#  endif
+  SYSConfig.ohdiscovery = OpenHABDiscovery;
+}
+
+void SYSConfig_fromJson(JsonObject& SYSdata) {
+  Config_update(SYSdata, "discovery", SYSConfig.discovery);
+  Config_update(SYSdata, "ohdiscovery", SYSConfig.ohdiscovery);
+}
+
+void SYSConfig_load() {
+  StaticJsonDocument<JSON_MSG_BUFFER> jsonBuffer;
+  preferences.begin(Gateway_Short_Name, true);
+  if (preferences.isKey("SYSConfig")) {
+    auto error = deserializeJson(jsonBuffer, preferences.getString("SYSConfig", "{}"));
+    preferences.end();
+    if (error) {
+      Log.error(F("SYS config deserialization failed: %s, buffer capacity: %u" CR), error.c_str(), jsonBuffer.capacity());
+      return;
+    }
+    if (jsonBuffer.isNull()) {
+      Log.warning(F("SYS config is null" CR));
+      return;
+    }
+    JsonObject jo = jsonBuffer.as<JsonObject>();
+    SYSConfig_fromJson(jo);
+    Log.notice(F("SYS config loaded" CR));
+  } else {
+    preferences.end();
+    Log.notice(F("SYS config not found" CR));
+  }
 }
 
 #  ifdef TRIGGER_GPIO
@@ -1698,11 +1741,11 @@ void loop() {
 
 #ifdef ZmqttDiscovery
       // Deactivate autodiscovery after DiscoveryAutoOffTimer
-      if (disc && (now > lastDiscovery + DiscoveryAutoOffTimer))
-        disc = false;
+      if (SYSConfig.discovery && (now > lastDiscovery + DiscoveryAutoOffTimer))
+        SYSConfig.discovery = false;
       // at first connection we publish the discovery payloads
       // or, when we have just re-connected (only when discovery_republish_on_reconnect is enabled)
-      bool publishDiscovery = disc && (!connectedOnce || (discovery_republish_on_reconnect && justReconnected));
+      bool publishDiscovery = SYSConfig.discovery && (!connectedOnce || (discovery_republish_on_reconnect && justReconnected));
       if (publishDiscovery) {
         pubMqttDiscovery();
       }
@@ -1816,7 +1859,7 @@ void loop() {
 #endif
 #ifdef ZgatewayBT
 #  ifdef ZmqttDiscovery
-      if (disc)
+      if (SYSConfig.discovery)
         launchBTDiscovery(publishDiscovery);
 #  endif
       emptyBTQueue();
@@ -1847,7 +1890,7 @@ void loop() {
 #ifdef ZgatewayRTL_433
       RTL_433Loop();
 #  ifdef ZmqttDiscovery
-      if (disc)
+      if (SYSConfig.discovery)
         launchRTL_433Discovery(publishDiscovery);
 #  endif
 #endif
@@ -1997,8 +2040,8 @@ String stateMeasures() {
 
   SYSdata["version"] = OMG_VERSION;
 #  ifdef ZmqttDiscovery
-  SYSdata["discovery"] = disc;
-  SYSdata["ohdiscovery"] = OpenHABDisc;
+  SYSdata["discovery"] = SYSConfig.discovery;
+  SYSdata["ohdiscovery"] = SYSConfig.ohdiscovery;
 #  endif
 #  if defined(ESP8266) || defined(ESP32)
   SYSdata["env"] = ENV_NAME;
@@ -2474,8 +2517,8 @@ void MQTTtoSYS(char* topicOri, JsonObject& SYSdata) { // json object decoding
     }
 #  ifdef ZmqttDiscovery
     if (SYSdata.containsKey("ohdiscovery") && SYSdata["ohdiscovery"].is<bool>()) {
-      OpenHABDisc = SYSdata["ohdiscovery"];
-      Log.notice(F("OpenHAB discovery: %T" CR), OpenHABDisc);
+      SYSConfig.ohdiscovery = SYSdata["ohdiscovery"];
+      Log.notice(F("OpenHAB discovery: %T" CR), SYSConfig.ohdiscovery);
       stateMeasures();
     }
 #  endif
@@ -2624,18 +2667,32 @@ void MQTTtoSYS(char* topicOri, JsonObject& SYSdata) { // json object decoding
 #ifdef ZmqttDiscovery
     if (SYSdata.containsKey("discovery")) {
       if (SYSdata["discovery"].is<bool>()) {
-        if (SYSdata["discovery"] == true && disc == false)
+        if (SYSdata["discovery"] == true && SYSConfig.discovery == false)
           lastDiscovery = millis();
-        disc = SYSdata["discovery"];
+        SYSConfig.discovery = SYSdata["discovery"];
         stateMeasures();
-        if (disc)
+        if (SYSConfig.discovery)
           pubMqttDiscovery();
       } else {
         Log.error(F("Discovery command not a boolean" CR));
       }
-      Log.notice(F("Discovery state: %T" CR), disc);
+      Log.notice(F("Discovery state: %T" CR), SYSConfig.discovery);
     }
 #endif
+
+    if (SYSdata.containsKey("save") && SYSdata["save"].as<bool>()) {
+      StaticJsonDocument<JSON_MSG_BUFFER> jsonBuffer;
+      JsonObject jo = jsonBuffer.to<JsonObject>();
+      jo["discovery"] = SYSConfig.discovery;
+      jo["ohdiscovery"] = SYSConfig.ohdiscovery;
+      // Save config into NVS (non-volatile storage)
+      String conf = "";
+      serializeJson(jsonBuffer, conf);
+      preferences.begin(Gateway_Short_Name, false);
+      int result = preferences.putString("SYSConfig", conf);
+      preferences.end();
+      Log.notice(F("SYS Config_save: %s, result: %d" CR), conf.c_str(), result);
+    }
   }
 }
 
