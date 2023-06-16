@@ -1293,12 +1293,9 @@ void saveConfigCallback() {
   shouldSaveConfig = true;
 }
 
-void SYSConfig_init() {
 #  ifdef ZmqttDiscovery
+void SYSConfig_init() {
   SYSConfig.discovery = true;
-#  else
-  SYSConfig.discovery = false;
-#  endif
   SYSConfig.ohdiscovery = OpenHABDiscovery;
 }
 
@@ -1329,6 +1326,11 @@ void SYSConfig_load() {
     Log.notice(F("SYS config not found" CR));
   }
 }
+#  else
+void SYSConfig_fromJson(JsonObject& SYSdata) {}
+void SYSConfig_init() {}
+void SYSConfig_load() {}
+#  endif
 
 #  ifdef TRIGGER_GPIO
 /**
@@ -2678,8 +2680,6 @@ void MQTTtoSYS(char* topicOri, JsonObject& SYSdata) { // json object decoding
       }
       Log.notice(F("Discovery state: %T" CR), SYSConfig.discovery);
     }
-#endif
-
     if (SYSdata.containsKey("save") && SYSdata["save"].as<bool>()) {
       StaticJsonDocument<JSON_MSG_BUFFER> jsonBuffer;
       JsonObject jo = jsonBuffer.to<JsonObject>();
@@ -2693,6 +2693,7 @@ void MQTTtoSYS(char* topicOri, JsonObject& SYSdata) { // json object decoding
       preferences.end();
       Log.notice(F("SYS Config_save: %s, result: %d" CR), conf.c_str(), result);
     }
+#endif
   }
 }
 
