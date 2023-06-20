@@ -881,10 +881,14 @@ void setup() {
   modules.add(ZwebUI);
 #endif
 
-#if defined(ESP8266) || defined(ESP32)
+#ifdef ZmqttDiscovery
   SYSConfig_init();
+#  ifdef ESP32
   SYSConfig_load();
+#  endif
+#endif
 
+#if defined(ESP8266) || defined(ESP32)
   if (mqtt_secure) {
     eClient = new WiFiClientSecure;
     if (mqtt_cert_validate) {
@@ -1303,7 +1307,7 @@ void SYSConfig_fromJson(JsonObject& SYSdata) {
   Config_update(SYSdata, "discovery", SYSConfig.discovery);
   Config_update(SYSdata, "ohdiscovery", SYSConfig.ohdiscovery);
 }
-
+#    ifdef ESP32
 void SYSConfig_load() {
   StaticJsonDocument<JSON_MSG_BUFFER> jsonBuffer;
   preferences.begin(Gateway_Short_Name, true);
@@ -1326,10 +1330,9 @@ void SYSConfig_load() {
     Log.notice(F("SYS config not found" CR));
   }
 }
-#  else
-void SYSConfig_fromJson(JsonObject& SYSdata) {}
-void SYSConfig_init() {}
+#    else // Function not available for ESP8266
 void SYSConfig_load() {}
+#    endif
 #  endif
 
 #  ifdef TRIGGER_GPIO
@@ -2680,6 +2683,7 @@ void MQTTtoSYS(char* topicOri, JsonObject& SYSdata) { // json object decoding
       }
       Log.notice(F("Discovery state: %T" CR), SYSConfig.discovery);
     }
+#  ifdef ESP32
     if (SYSdata.containsKey("save") && SYSdata["save"].as<bool>()) {
       StaticJsonDocument<JSON_MSG_BUFFER> jsonBuffer;
       JsonObject jo = jsonBuffer.to<JsonObject>();
@@ -2693,6 +2697,7 @@ void MQTTtoSYS(char* topicOri, JsonObject& SYSdata) { // json object decoding
       preferences.end();
       Log.notice(F("SYS Config_save: %s, result: %d" CR), conf.c_str(), result);
     }
+#  endif
 #endif
   }
 }

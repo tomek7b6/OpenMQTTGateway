@@ -27,7 +27,7 @@ You can deactivate the MQTT auto discovery function, this function enables to au
 ### Activate
 `mosquitto_pub -t "home/OpenMQTTGateway/commands/MQTTtoSYS/config" -m '{"discovery":true}'`
 
-If you want the settings to be kept upon gateway restart, you can save the state by adding `"save":true`.
+If you want the settings to be kept upon gateway restart, you can save the state by adding `"save":true` (ESP32 only).
 `mosquitto_pub -t "home/OpenMQTTGateway/commands/MQTTtoSYS/config" -m '{"discovery":false, "save":true}'`
 
 ::: tip
@@ -39,7 +39,7 @@ OpenHAB does not support the key `is_defined` in the json template, to remove it
 
 `mosquitto_pub -t "home/OpenMQTTGateway/commands/MQTTtoSYS/config" -m '{"ohdiscovery":true}'`
 
-If you want the settings to be kept upon gateway restart, you can save the state by adding `"save":true`.
+If you want the settings to be kept upon gateway restart, you can save the state by adding `"save":true` (ESP32 only).
 `mosquitto_pub -t "home/OpenMQTTGateway/commands/MQTTtoSYS/config" -m '{"ohdiscovery":true, "save":true}'`
 
 ::: tip
