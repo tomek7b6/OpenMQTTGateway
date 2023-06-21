@@ -57,7 +57,7 @@ using namespace std;
 // Global struct to store live BT configuration data
 BTConfig_s BTConfig;
 
-UseExtDecoder decoder;
+TheengsDecoder decoder;
 
 static TaskHandle_t xCoreTaskHandle;
 static TaskHandle_t xProcBLETaskHandle;
