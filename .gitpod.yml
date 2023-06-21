@@ -1,2 +1,2 @@
 tasks:
-  - command: pip3 install -U platformio && platformio run -e esp32dev-ble
+  - command: pip3 install -U platformio && platformio run -e lilygo-rtl_433
